@@ -1,0 +1,328 @@
+#include "common.h"
+#include "timer.h"
+#include "idt.h"
+#include "keyboard.h"
+#include "game.h"
+
+// Déclarations de fonctions externes
+void gdt_install();
+extern uint32_t tick;
+
+// --- Variables et fonctions VGA ---
+volatile uint16_t* vga_buffer = (uint16_t*)0xB8000;
+const int VGA_WIDTH = 80;
+const int VGA_HEIGHT = 25;
+uint8_t terminal_color = 0x0F;
+int cursor_x = 0;
+int cursor_y = 0;
+
+void move_cursor(int x, int y) {
+    uint16_t pos = y * VGA_WIDTH + x;
+    outb(0x3D4, 0x0F);
+    outb(0x3D5, (uint8_t)(pos & 0xFF));
+    outb(0x3D4, 0x0E);
+    outb(0x3D5, (uint8_t)((pos >> 8) & 0xFF));
+}
+
+void terminal_putchar_at(char c, int x, int y) {
+    vga_buffer[y * VGA_WIDTH + x] = ((uint16_t)terminal_color << 8) | c;
+}
+
+void clear_screen() {
+    for (int y = 0; y < VGA_HEIGHT; y++) {
+        for (int x = 0; x < VGA_WIDTH; x++) {
+            terminal_putchar_at(' ', x, y);
+        }
+    }
+    cursor_x = 0;
+    cursor_y = 0;
+    move_cursor(cursor_x, cursor_y);
+}
+
+void terminal_putchar(char c) {
+    if (c == '\n') {
+        cursor_x = 0;
+        cursor_y++;
+    } else {
+        terminal_putchar_at(c, cursor_x, cursor_y);
+        cursor_x++;
+    }
+    if (cursor_x >= VGA_WIDTH) {
+        cursor_x = 0;
+        cursor_y++;
+    }
+    // Note: un scroll complet n'est pas implémenté ici
+    move_cursor(cursor_x, cursor_y);
+}
+
+void terminal_writestring(const char* data) {
+    for (size_t i = 0; data[i] != 0; i++) {
+        terminal_putchar(data[i]);
+    }
+}
+
+// --- Lecture de ligne du Shell ---
+void redraw_line(int start_x, char* buffer, size_t len) {
+    for(size_t i = 0; i < len; i++) {
+        terminal_putchar_at(buffer[i], start_x + i, cursor_y);
+    }
+    terminal_putchar_at(' ', start_x + len, cursor_y);
+}
+
+void readline(char* buffer, size_t max_len) {
+    size_t len = 0, pos = 0;
+    int start_x = cursor_x, start_y = cursor_y;
+    while (1) {
+        int key = getkey();
+        if (key == '\n') {
+            terminal_putchar('\n');
+            break;
+        } else if (key == '\b') {
+            if (pos > 0) {
+                for (size_t i = pos - 1; i < len; i++) buffer[i] = buffer[i + 1];
+                len--; pos--;
+                redraw_line(start_x, buffer, len);
+            }
+        }
+        else if (key > 0 && key < 256 && len < max_len - 1) {
+            for (size_t i = len; i > pos; i--) buffer[i] = buffer[i - 1];
+            buffer[pos] = (char)key;
+            len++; pos++;
+            redraw_line(start_x, buffer, len);
+        }
+        cursor_x = start_x + pos;
+        cursor_y = start_y;
+        move_cursor(cursor_x, cursor_y);
+    }
+    buffer[len] = '\0';
+}
+
+// --- Fonctions utilitaires ---
+int strcmp(const char* s1, const char* s2) {
+    while (*s1 && (*s1 == *s2)) {
+        s1++;
+        s2++;
+    }
+    return *(const unsigned char*)s1 - *(const unsigned char*)s2;
+}
+
+void reverse_string(char* str, int length) {
+    int start = 0;
+    int end = length - 1;
+    while (start < end) {
+        char temp = str[start];
+        str[start] = str[end];
+        str[end] = temp;
+        start++;
+        end--;
+    }
+}
+
+char* simple_itoa(int num, char* buffer, int base) {
+    int i = 0;
+    int is_negative = 0;
+    if (num == 0) {
+        buffer[i++] = '0';
+        buffer[i] = '\0';
+        return buffer;
+    }
+    if (num < 0 && base == 10) {
+        is_negative = 1;
+        num = -num;
+    }
+    while (num != 0) {
+        int rem = num % base;
+        buffer[i++] = (rem > 9) ? (rem - 10) + 'a' : rem + '0';
+        num = num / 10;
+    }
+    if (is_negative) {
+        buffer[i++] = '-';
+    }
+    buffer[i] = '\0';
+    reverse_string(buffer, i);
+    return buffer;
+}
+
+int simple_atoi(const char* str) {
+    int res = 0;
+    int sign = 1;
+    int i = 0;
+    if (str[0] == '-') {
+        sign = -1;
+        i++;
+    }
+    while(str[i] == ' ') i++;
+    for (; str[i] != '\0'; ++i) {
+        if (str[i] >= '0' && str[i] <= '9') {
+            res = res * 10 + str[i] - '0';
+        } else {
+            break;
+        }
+    }
+    return res * sign;
+}
+
+// --- Fonctions des commandes ---
+void do_calc(char* input) {
+    if (!input || *input == '\0') {
+        terminal_writestring("Usage: calc <nombre> <op> <nombre>\n");
+        return;
+    }
+    int num1 = simple_atoi(input);
+    char* op = input;
+    if (*op == '-') op++;
+    while (*op && (*op >= '0' && *op <= '9')) op++;
+    while (*op == ' ') op++;
+    char operator = *op;
+    op++;
+    int num2 = simple_atoi(op);
+    int result = 0;
+    switch (operator) {
+        case '+': result = num1 + num2; break;
+        case '-': result = num1 - num2; break;
+        case '*': result = num1 * num2; break;
+        case '/':
+            if (num2 == 0) { terminal_writestring("Error: Division by zero!\n"); return; }
+            result = num1 / num2;
+            break;
+        default: terminal_writestring("Error: Unknown operator.\n"); return;
+    }
+    char result_buffer[32];
+    simple_itoa(result, result_buffer, 10);
+    terminal_writestring(result_buffer);
+    terminal_putchar('\n');
+}
+
+void do_chrono() {
+    terminal_writestring("Chronom\x8Atre d\x82marr\x82. Appuyez sur une touche pour arr\x88ter.\n");
+    uint32_t start_tick = tick;
+    getkey();
+    terminal_putchar('\n');
+    uint32_t end_tick = tick;
+    uint32_t diff = end_tick - start_tick;
+    uint32_t seconds = diff / 100;
+    uint32_t centiseconds = diff % 100;
+    char buffer[32];
+    terminal_writestring("Temps ecoule : ");
+    simple_itoa(seconds, buffer, 10);
+    terminal_writestring(buffer);
+    terminal_writestring(".");
+    if (centiseconds < 10) {
+        terminal_putchar('0');
+    }
+    simple_itoa(centiseconds, buffer, 10);
+    terminal_writestring(buffer);
+    terminal_writestring("s\n");
+}
+
+typedef struct {
+    const char* name;
+    uint8_t code;
+} ColorMap;
+
+static const ColorMap color_map[] = {
+    {"black", 0x0}, {"blue", 0x1}, {"green", 0x2}, {"cyan", 0x3},
+    {"red", 0x4}, {"magenta", 0x5}, {"brown", 0x6}, {"light_grey", 0x7},
+    {"dark_grey", 0x8}, {"light_blue", 0x9}, {"light_green", 0xA},
+    {"light_cyan", 0xB}, {"light_red", 0xC}, {"light_magenta", 0xD},
+    {"yellow", 0xE}, {"white", 0xF}
+};
+
+int parse_color_string(const char* s) {
+    if (s[0] >= '0' && s[0] <= '9' && s[1] == '\0') return s[0] - '0';
+    if (s[0] >= 'a' && s[0] <= 'f' && s[1] == '\0') return s[0] - 'a' + 10;
+    if (s[0] >= 'A' && s[0] <= 'F' && s[1] == '\0') return s[0] - 'A' + 10;
+    for (size_t i = 0; i < sizeof(color_map) / sizeof(ColorMap); i++) {
+        if (strcmp(s, color_map[i].name) == 0) {
+            return color_map[i].code;
+        }
+    }
+    return -1;
+}
+
+void do_color(char* args) {
+    if (!args || strcmp(args, "help") == 0) {
+        terminal_writestring("Usage: color <fg> [bg]\nEx: color yellow blue, color C 1\n");
+        terminal_writestring("Colors: black, blue, green, cyan, red, magenta, brown, light_grey, dark_grey, light_blue, light_green, light_cyan, light_red, light_magenta, yellow, white.\n");
+        return;
+    }
+    char* fg_str = args;
+    char* bg_str = NULL;
+    int i = 0;
+    while (args[i] != ' ' && args[i] != '\0') i++;
+    if (args[i] == ' ') {
+        args[i] = '\0';
+        bg_str = &args[i + 1];
+    }
+    int fg_code = parse_color_string(fg_str);
+    if (fg_code == -1) {
+        terminal_writestring("Invalid foreground color.\n");
+        return;
+    }
+    int bg_code = -1;
+    if (bg_str) {
+        bg_code = parse_color_string(bg_str);
+        if (bg_code == -1) {
+            terminal_writestring("Invalid background color.\n");
+            return;
+        }
+    }
+    uint8_t current_bg = (terminal_color >> 4) & 0x0F;
+    if (bg_code != -1) {
+        current_bg = bg_code;
+    }
+    terminal_color = (current_bg << 4) | fg_code;
+    for (int y = 0; y < VGA_HEIGHT; y++) {
+        for (int x = 0; x < VGA_WIDTH; x++) {
+            vga_buffer[y * VGA_WIDTH + x] = (vga_buffer[y * VGA_WIDTH + x] & 0x00FF) | (terminal_color << 8);
+        }
+    }
+}
+
+void execute_command(char* line) {
+    char* command = line;
+    char* args = NULL;
+    int i = 0;
+    while (line[i] != ' ' && line[i] != '\0') i++;
+    if (line[i] == ' ') {
+        line[i] = '\0';
+        args = &line[i + 1];
+    }
+    if (strcmp(command, "help") == 0) {
+        terminal_writestring("Commands: help, clear, about, calc, chrono, snake, color\n");
+    } else if (strcmp(command, "clear") == 0) {
+        clear_screen();
+    } else if (strcmp(command, "about") == 0) {
+        terminal_writestring("MyOS - v1.1 Color Edition\n");
+    } else if (strcmp(command, "calc") == 0) {
+        do_calc(args);
+    } else if (strcmp(command, "chrono") == 0) {
+        do_chrono();
+    } else if (strcmp(command, "snake") == 0) {
+        play_snake();
+        clear_screen();
+        terminal_writestring("Welcome back to the shell!\n");
+    } else if (strcmp(command, "color") == 0) {
+        do_color(args);
+    } else if (command[0] != '\0') {
+        terminal_writestring("Unknown command.\n");
+    }
+}
+
+// --- Point d'entrée principal du Kernel ---
+void kernel_main(void) {
+    gdt_install();
+    idt_install();
+    timer_install();
+    asm volatile("sti");
+
+    clear_screen();
+    terminal_writestring("Welcome to MyOS v1.1 - Color Edition!\n\n");
+    
+    char command_buffer[128];
+    while (1) {
+        terminal_writestring("> ");
+        readline(command_buffer, 128); 
+        execute_command(command_buffer);
+    }
+}
