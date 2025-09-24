@@ -1,0 +1,22 @@
+# Fichiers de compilation
+*.o
+*.bin
+*.iso
+kernel.bin
+myos.iso
+
+# Dossiers de build
+isofiles/
+
+# Makefile local (modifications personnelles)
+Makefile
+
+# Fichiers système
+.DS_Store
+Thumbs.db
+
+# Fichiers temporaires
+*~
+*.tmp
+*.swp
+*.swo
