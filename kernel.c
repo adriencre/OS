@@ -11,6 +11,10 @@
 void gdt_install();
 extern uint32_t tick;
 
+// Déclarations de fonctions utilitaires
+int strcmp(const char* s1, const char* s2);
+char* simple_itoa(int num, char* buffer, int base);
+
 // --- Variables et fonctions VGA ---
 volatile uint16_t* vga_buffer = (uint16_t*)0xB8000;
 const int VGA_WIDTH = 80;
@@ -49,6 +53,23 @@ void clear_screen() {
     move_cursor(cursor_x, cursor_y);
 }
 
+void scroll_screen() {
+    // Décaler toutes les lignes vers le haut
+    for (int y = 1; y < VGA_HEIGHT; y++) {
+        for (int x = 0; x < VGA_WIDTH; x++) {
+            vga_buffer[(y - 1) * VGA_WIDTH + x] = vga_buffer[y * VGA_WIDTH + x];
+        }
+    }
+    
+    // Vider la dernière ligne
+    for (int x = 0; x < VGA_WIDTH; x++) {
+        terminal_putchar_at(' ', x, VGA_HEIGHT - 1);
+    }
+    
+    // Ajuster la position du curseur
+    cursor_y = VGA_HEIGHT - 1;
+}
+
 void terminal_putchar(char c) {
     if (c == '\n') {
         cursor_x = 0;
@@ -61,13 +82,73 @@ void terminal_putchar(char c) {
         cursor_x = 0;
         cursor_y++;
     }
-    // Note: un scroll complet n'est pas implémenté ici
+    
+    // Gestion du défilement automatique
+    if (cursor_y >= VGA_HEIGHT) {
+        scroll_screen();
+    }
+    
     move_cursor(cursor_x, cursor_y);
 }
 
 void terminal_writestring(const char* data) {
     for (size_t i = 0; data[i] != 0; i++) {
         terminal_putchar(data[i]);
+    }
+}
+
+// --- Historique des commandes ---
+#define MAX_HISTORY 20
+#define MAX_COMMAND_LEN 128
+
+static char command_history[MAX_HISTORY][MAX_COMMAND_LEN];
+static int history_count = 0;
+static int history_index = 0;
+
+void add_to_history(const char* command) {
+    if (command[0] == '\0') return; // Ne pas ajouter les commandes vides
+    
+    // Vérifier si la commande est différente de la dernière
+    if (history_count > 0) {
+        int last_index = (history_count - 1) % MAX_HISTORY;
+        if (strcmp(command_history[last_index], command) == 0) {
+            return; // Ne pas ajouter les doublons consécutifs
+        }
+    }
+    
+    // Ajouter la commande à l'historique
+    int index = history_count % MAX_HISTORY;
+    for (int i = 0; i < MAX_COMMAND_LEN - 1 && command[i] != '\0'; i++) {
+        command_history[index][i] = command[i];
+        command_history[index][i + 1] = '\0';
+    }
+    history_count++;
+    history_index = history_count; // Réinitialiser l'index de navigation
+}
+
+void get_history_command(int direction, char* buffer) {
+    if (history_count == 0) return;
+    
+    if (direction == -1) { // Flèche haut (commande précédente)
+        if (history_index > 0) {
+            history_index--;
+        }
+    } else if (direction == 1) { // Flèche bas (commande suivante)
+        if (history_index < history_count) {
+            history_index++;
+        }
+    }
+    
+    if (history_index >= history_count) {
+        buffer[0] = '\0'; // Ligne vide si on dépasse
+    } else {
+        int actual_index = history_index % MAX_HISTORY;
+        if (history_index < history_count) {
+            for (int i = 0; i < MAX_COMMAND_LEN; i++) {
+                buffer[i] = command_history[actual_index][i];
+                if (buffer[i] == '\0') break;
+            }
+        }
     }
 }
 
@@ -82,17 +163,57 @@ void redraw_line(int start_x, char* buffer, size_t len) {
 void readline(char* buffer, size_t max_len) {
     size_t len = 0, pos = 0;
     int start_x = cursor_x, start_y = cursor_y;
+    
     while (1) {
         int key = getkey();
+        
         if (key == '\n') {
             terminal_putchar('\n');
             break;
-        } else if (key == '\b') {
+        } 
+        else if (key == '\b') {
             if (pos > 0) {
                 for (size_t i = pos - 1; i < len; i++) buffer[i] = buffer[i + 1];
                 len--; pos--;
                 redraw_line(start_x, buffer, len);
             }
+        }
+        // Gestion des flèches pour l'historique
+        else if (key == 257) { // KEY_UP - Flèche haut
+            char history_buffer[MAX_COMMAND_LEN];
+            get_history_command(-1, history_buffer);
+            
+            // Effacer la ligne actuelle
+            for (size_t i = 0; i < len; i++) {
+                terminal_putchar_at(' ', start_x + i, cursor_y);
+            }
+            
+            // Copier la commande de l'historique
+            len = 0;
+            for (int i = 0; i < MAX_COMMAND_LEN && history_buffer[i] != '\0'; i++) {
+                buffer[i] = history_buffer[i];
+                len++;
+            }
+            pos = len;
+            redraw_line(start_x, buffer, len);
+        }
+        else if (key == 258) { // KEY_DOWN - Flèche bas
+            char history_buffer[MAX_COMMAND_LEN];
+            get_history_command(1, history_buffer);
+            
+            // Effacer la ligne actuelle
+            for (size_t i = 0; i < len; i++) {
+                terminal_putchar_at(' ', start_x + i, cursor_y);
+            }
+            
+            // Copier la commande de l'historique
+            len = 0;
+            for (int i = 0; i < MAX_COMMAND_LEN && history_buffer[i] != '\0'; i++) {
+                buffer[i] = history_buffer[i];
+                len++;
+            }
+            pos = len;
+            redraw_line(start_x, buffer, len);
         }
         else if (key > 0 && key < 256 && len < max_len - 1) {
             for (size_t i = len; i > pos; i--) buffer[i] = buffer[i - 1];
@@ -100,6 +221,7 @@ void readline(char* buffer, size_t max_len) {
             len++; pos++;
             redraw_line(start_x, buffer, len);
         }
+        
         cursor_x = start_x + pos;
         cursor_y = start_y;
         move_cursor(cursor_x, cursor_y);
@@ -427,6 +549,25 @@ void do_memory() {
     print_memory_stats();
 }
 
+void do_history() {
+    terminal_writestring("Historique des commandes:\n");
+    if (history_count == 0) {
+        terminal_writestring("Aucune commande dans l'historique.\n");
+        return;
+    }
+    
+    int start = (history_count > MAX_HISTORY) ? history_count - MAX_HISTORY : 0;
+    for (int i = start; i < history_count; i++) {
+        int index = i % MAX_HISTORY;
+        char num_buffer[16];
+        simple_itoa(i + 1, num_buffer, 10);
+        terminal_writestring(num_buffer);
+        terminal_writestring(": ");
+        terminal_writestring(command_history[index]);
+        terminal_writestring("\n");
+    }
+}
+
 void execute_command(char* line) {
     char* command = line;
     char* args = NULL;
@@ -437,7 +578,7 @@ void execute_command(char* line) {
         args = &line[i + 1];
     }
     if (strcmp(command, "help") == 0) {
-        terminal_writestring("Commands: help, clear, about, calc, chrono, snake, color, blackjack, charset, background, memory\n");
+        terminal_writestring("Commands: help, clear, about, calc, chrono, snake, color, blackjack, charset, background, memory, history\n");
     } else if (strcmp(command, "clear") == 0) {
         clear_screen();
     } else if (strcmp(command, "about") == 0) {
@@ -458,6 +599,8 @@ void execute_command(char* line) {
         do_background(args);
     } else if (strcmp(command, "memory") == 0) {
         do_memory();
+    } else if (strcmp(command, "history") == 0) {
+        do_history();
     } else if (strcmp(command, "blackjack") == 0) {
         if (play_blackjack()) {
             // Le joueur a gagné au blackjack, accès autorisé à Health
@@ -498,6 +641,7 @@ void kernel_main(void) {
     while (1) {
         terminal_writestring("> ");
         readline(command_buffer, 128);
+        add_to_history(command_buffer); // Ajouter la commande à l'historique
         execute_command(command_buffer);
     }
 }

@@ -31,6 +31,14 @@ int getkey() {
                 case 0x2A: case 0x36: shift_pressed = 1; continue;
                 case 0xAA: case 0xB6: shift_pressed = 0; continue;
             }
+            // Gestion des flèches directionnelles
+            switch (scancode) {
+                case 0x48: return KEY_UP;    // Flèche haut
+                case 0x50: return KEY_DOWN;  // Flèche bas
+                case 0x4B: return KEY_LEFT;  // Flèche gauche
+                case 0x4D: return KEY_RIGHT; // Flèche droite
+            }
+            
             if (scancode < 0x80) {
                 const char* map = shift_pressed ? scancode_map_azerty_shifted : scancode_map_azerty_normal;
                 if (scancode < sizeof(scancode_map_azerty_normal)) {
