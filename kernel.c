@@ -6,6 +6,7 @@
 #include "health.h"
 #include "blackjack.h"
 #include "memory.h"
+#include "wiki.h"
 
 // Déclarations de fonctions externes
 void gdt_install();
@@ -578,7 +579,7 @@ void execute_command(char* line) {
         args = &line[i + 1];
     }
     if (strcmp(command, "help") == 0) {
-        terminal_writestring("Commands: help, clear, about, calc, chrono, snake, color, blackjack, charset, background, memory, history\n");
+        terminal_writestring("Commands: help, clear, about, calc, chrono, snake, color, blackjack, charset, background, memory, history, wiki\n");
     } else if (strcmp(command, "clear") == 0) {
         clear_screen();
     } else if (strcmp(command, "about") == 0) {
@@ -601,6 +602,8 @@ void execute_command(char* line) {
         do_memory();
     } else if (strcmp(command, "history") == 0) {
         do_history();
+    } else if (strcmp(command, "wiki") == 0) {
+        do_wiki(args);
     } else if (strcmp(command, "blackjack") == 0) {
         if (play_blackjack()) {
             // Le joueur a gagné au blackjack, accès autorisé à Health
@@ -631,6 +634,7 @@ void kernel_main(void) {
     idt_install();
     timer_install();
     memory_init();
+    wiki_init();  // Initialiser la mini-Wikipedia
     asm volatile("sti");
 
     clear_screen();
