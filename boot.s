@@ -9,7 +9,7 @@ global _start
 _start:
     ; Le code C s'attend à une pile (stack) valide
     mov esp, stack_space
-    
+
     extern kernel_main
     call kernel_main
 
@@ -20,5 +20,5 @@ _start:
     jmp .hang
 
 section .bss
-resb 8192 ; 8KB pour la pile
+resb 24576 ; 24KB pour la pile (triplé)
 stack_space:

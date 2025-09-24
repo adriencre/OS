@@ -3,6 +3,9 @@
 #include "idt.h"
 #include "keyboard.h"
 #include "game.h"
+#include "health.h"
+#include "blackjack.h"
+#include "memory.h"
 
 // Déclarations de fonctions externes
 void gdt_install();
@@ -22,6 +25,13 @@ void move_cursor(int x, int y) {
     outb(0x3D5, (uint8_t)(pos & 0xFF));
     outb(0x3D4, 0x0E);
     outb(0x3D5, (uint8_t)((pos >> 8) & 0xFF));
+}
+
+// ✅ FONCTION AJOUTÉE NÉCESSAIRE POUR BLACKJACK.C
+// Affiche un caractère avec une couleur spécifique à une position (x, y)
+void terminal_putentryat(char c, uint8_t color, int x, int y) {
+    const int index = y * VGA_WIDTH + x;
+    vga_buffer[index] = (uint16_t)c | (uint16_t)color << 8;
 }
 
 void terminal_putchar_at(char c, int x, int y) {
@@ -194,7 +204,7 @@ void do_calc(char* input) {
 }
 
 void do_chrono() {
-    terminal_writestring("Chronom\x8Atre d\x82marr\x82. Appuyez sur une touche pour arr\x88ter.\n");
+    terminal_writestring("Chronometre demarre. Appuyez sur une touche pour arreter.\n");
     uint32_t start_tick = tick;
     getkey();
     terminal_putchar('\n');
@@ -279,6 +289,144 @@ void do_color(char* args) {
     }
 }
 
+void display_boot_logo() {
+    terminal_writestring("      M   M  Y   Y   OOO    SSS\n");
+    terminal_writestring("      MM MM   Y Y   O   O  S   \n");
+    terminal_writestring("      M M M    Y    O   O   SSS\n");
+    terminal_writestring("      M   M    Y    O   O      S\n");
+    terminal_writestring("      M   M    Y     OOO    SSS\n");
+    terminal_writestring("\n");
+    terminal_writestring("      ===========================\n");
+    terminal_writestring("        Systeme d'Exploitation   \n");
+    terminal_writestring("           Color Edition v1.1    \n");
+    terminal_writestring("      ===========================\n");
+    terminal_writestring("\n");
+}
+
+void do_charset() {
+    terminal_writestring("Caracteres ASCII pour motifs de fond:\n");
+    terminal_writestring("Symboles de base: ! \" # $ % & ' ( ) * + , - . /\n");
+    terminal_writestring("Chiffres:           0 1 2 3 4 5 6 7 8 9\n");
+    terminal_writestring("Lettres:            A-Z a-z\n");
+    terminal_writestring("Autres symboles:    : ; < = > ? @ [ \\ ] ^ _ ` { | } ~\n");
+    terminal_writestring("\nCaracteres pour motifs:\n");
+
+    terminal_writestring("Blocs et points:  # * + . : ; = - _ | \\ /\n");
+    terminal_writestring("Bordures:           + - | \\ / < > ^ v\n");
+    terminal_writestring("Espacement:         . : ; , ' ` ~\n");
+
+    terminal_writestring("\nExemples de motifs ASCII:\n");
+    terminal_writestring("Grille: + - |\n");
+    terminal_writestring("Points: . : ; ,\n");
+    terminal_writestring("Lignes: - _ = ~ ^\n");
+    terminal_writestring("Blocs:  # * @ %\n");
+
+    terminal_writestring("\nUtilisez 'background' pour appliquer un motif!\n");
+}
+
+void draw_background_pattern() {
+    // Sauvegarde du curseur actuel
+    int old_x = cursor_x, old_y = cursor_y;
+
+    // Motif de fond avec des caractères ASCII légers
+    for (int y = 0; y < VGA_HEIGHT; y++) {
+        for (int x = 0; x < VGA_WIDTH; x++) {
+            char pattern_char = ' ';
+            uint8_t pattern_color = 0x00; // Noir sur noir par défaut
+
+            // Créer un motif géométrique ASCII
+            if ((x + y) % 8 == 0) {
+                pattern_char = '.'; // Point ASCII
+                pattern_color = 0x08; // Gris foncé
+            } else if (x % 10 == 0) {
+                pattern_char = '|'; // Ligne verticale ASCII
+                pattern_color = 0x08;
+            } else if (y % 5 == 0) {
+                pattern_char = '-'; // Ligne horizontale ASCII
+                pattern_color = 0x08;
+            }
+
+            vga_buffer[y * VGA_WIDTH + x] = ((uint16_t)pattern_color << 8) | pattern_char;
+        }
+    }
+
+    // Restaurer le curseur
+    cursor_x = old_x;
+    cursor_y = old_y;
+    move_cursor(cursor_x, cursor_y);
+}
+
+void do_background(char* args) {
+    if (!args) {
+        terminal_writestring("Usage: background <pattern>\n");
+        terminal_writestring("Patterns: clear, dots, lines, grid, stars\n");
+        return;
+    }
+
+    if (strcmp(args, "clear") == 0) {
+        clear_screen();
+        terminal_writestring("Fond efface.\n");
+    } else if (strcmp(args, "dots") == 0) {
+        draw_background_pattern();
+        cursor_x = 0; cursor_y = 0;
+        move_cursor(cursor_x, cursor_y);
+        terminal_writestring("Motif de points ASCII applique!\n");
+    } else if (strcmp(args, "stars") == 0) {
+        // Nouveau motif d'étoiles ASCII
+        for (int y = 0; y < VGA_HEIGHT; y++) {
+            for (int x = 0; x < VGA_WIDTH; x++) {
+                if ((x * 7 + y * 3) % 23 == 0) {
+                    vga_buffer[y * VGA_WIDTH + x] = (0x07 << 8) | '*'; // Étoiles blanches
+                } else if ((x * 5 + y * 11) % 17 == 0) {
+                    vga_buffer[y * VGA_WIDTH + x] = (0x08 << 8) | '.'; // Points gris
+                } else {
+                    vga_buffer[y * VGA_WIDTH + x] = (0x00 << 8) | ' ';
+                }
+            }
+        }
+        cursor_x = 0; cursor_y = 0;
+        move_cursor(cursor_x, cursor_y);
+        terminal_writestring("Motif d'etoiles applique!\n");
+    } else if (strcmp(args, "lines") == 0) {
+        // Motif de lignes ASCII
+        for (int y = 0; y < VGA_HEIGHT; y++) {
+            for (int x = 0; x < VGA_WIDTH; x++) {
+                if (y % 2 == 0 && x % 4 == 0) {
+                    vga_buffer[y * VGA_WIDTH + x] = (0x08 << 8) | '-'; // Ligne horizontale ASCII
+                } else {
+                    vga_buffer[y * VGA_WIDTH + x] = (0x00 << 8) | ' ';
+                }
+            }
+        }
+        cursor_x = 0; cursor_y = 0;
+        move_cursor(cursor_x, cursor_y);
+        terminal_writestring("Motif de lignes ASCII applique!\n");
+    } else if (strcmp(args, "grid") == 0) {
+        // Motif de grille ASCII
+        for (int y = 0; y < VGA_HEIGHT; y++) {
+            for (int x = 0; x < VGA_WIDTH; x++) {
+                if ((x % 10 == 0 && y % 5 != 0) || (y % 5 == 0 && x % 10 != 0)) {
+                    char grid_char = (x % 10 == 0) ? '|' : '-'; // Vertical ou horizontal ASCII
+                    vga_buffer[y * VGA_WIDTH + x] = (0x08 << 8) | grid_char;
+                } else if (x % 10 == 0 && y % 5 == 0) {
+                    vga_buffer[y * VGA_WIDTH + x] = (0x08 << 8) | '+'; // Intersection ASCII
+                } else {
+                    vga_buffer[y * VGA_WIDTH + x] = (0x00 << 8) | ' ';
+                }
+            }
+        }
+        cursor_x = 0; cursor_y = 0;
+        move_cursor(cursor_x, cursor_y);
+        terminal_writestring("Motif de grille ASCII applique!\n");
+    } else {
+        terminal_writestring("Pattern inconnu. Utilisez: clear, dots, lines, grid, stars\n");
+    }
+}
+
+void do_memory() {
+    print_memory_stats();
+}
+
 void execute_command(char* line) {
     char* command = line;
     char* args = NULL;
@@ -289,7 +437,7 @@ void execute_command(char* line) {
         args = &line[i + 1];
     }
     if (strcmp(command, "help") == 0) {
-        terminal_writestring("Commands: help, clear, about, calc, chrono, snake, color\n");
+        terminal_writestring("Commands: help, clear, about, calc, chrono, snake, color, blackjack, charset, background, memory\n");
     } else if (strcmp(command, "clear") == 0) {
         clear_screen();
     } else if (strcmp(command, "about") == 0) {
@@ -304,6 +452,31 @@ void execute_command(char* line) {
         terminal_writestring("Welcome back to the shell!\n");
     } else if (strcmp(command, "color") == 0) {
         do_color(args);
+    } else if (strcmp(command, "charset") == 0) {
+        do_charset();
+    } else if (strcmp(command, "background") == 0) {
+        do_background(args);
+    } else if (strcmp(command, "memory") == 0) {
+        do_memory();
+    } else if (strcmp(command, "blackjack") == 0) {
+        if (play_blackjack()) {
+            // Le joueur a gagné au blackjack, accès autorisé à Health
+            health_app();
+            clear_screen();
+            terminal_writestring("Retour au shell principal.\n");
+        } else {
+            // Le joueur a perdu, retour au shell sans accès
+            clear_screen();
+            terminal_writestring("Acces aux dossiers medicaux refuse!\n");
+            terminal_writestring("Gagnez au blackjack pour y acceder.\n");
+        }
+    } else if (strcmp(command, "medic_admin") == 0) {
+        // Commande secrète pour accès direct (pour les tests)
+        terminal_writestring("=== ACCES ADMINISTRATEUR ===\n");
+        terminal_writestring("Acces direct aux dossiers medicaux autorise.\n\n");
+        health_app();
+        clear_screen();
+        terminal_writestring("Retour au shell principal.\n");
     } else if (command[0] != '\0') {
         terminal_writestring("Unknown command.\n");
     }
@@ -314,15 +487,17 @@ void kernel_main(void) {
     gdt_install();
     idt_install();
     timer_install();
+    memory_init();
     asm volatile("sti");
 
     clear_screen();
+    display_boot_logo();
     terminal_writestring("Welcome to MyOS v1.1 - Color Edition!\n\n");
-    
+
     char command_buffer[128];
     while (1) {
         terminal_writestring("> ");
-        readline(command_buffer, 128); 
+        readline(command_buffer, 128);
         execute_command(command_buffer);
     }
 }
