@@ -413,16 +413,16 @@ void do_color(char* args) {
 }
 
 void display_boot_logo() {
-    terminal_writestring("      M   M  Y   Y   OOO    SSS\n");
-    terminal_writestring("      MM MM   Y Y   O   O  S   \n");
-    terminal_writestring("      M M M    Y    O   O   SSS\n");
-    terminal_writestring("      M   M    Y    O   O      S\n");
-    terminal_writestring("      M   M    Y     OOO    SSS\n");
+    terminal_writestring("      N   N   OOO   V   V  AAAAA\n");
+    terminal_writestring("      NN  N  O   O  V   V  A   A\n");
+    terminal_writestring("      N N N  O   O  V   V  AAAAA\n");
+    terminal_writestring("      N  NN  O   O   V V   A   A\n");
+    terminal_writestring("      N   N   OOO     V    A   A\n");
     terminal_writestring("\n");
-    terminal_writestring("      ===========================\n");
-    terminal_writestring("        Systeme d'Exploitation   \n");
-    terminal_writestring("           Color Edition v1.1.1    \n");
-    terminal_writestring("      ===========================\n");
+    terminal_writestring("      =============================\n");
+    terminal_writestring("         Systeme d'Exploitation    \n");
+    terminal_writestring("              NOVA v2.0            \n");
+    terminal_writestring("      =============================\n");
     terminal_writestring("\n");
 }
 
@@ -583,7 +583,7 @@ void execute_command(char* line) {
     } else if (strcmp(command, "clear") == 0) {
         clear_screen();
     } else if (strcmp(command, "about") == 0) {
-        terminal_writestring("MyOS - v1.1.1 Color Edition\n");
+        terminal_writestring("NOVA - v2.0 Advanced Edition\n");
     } else if (strcmp(command, "calc") == 0) {
         do_calc(args);
     } else if (strcmp(command, "chrono") == 0) {
@@ -639,7 +639,7 @@ void kernel_main(void) {
 
     clear_screen();
     display_boot_logo();
-    terminal_writestring("Welcome to MyOS v1.1 - Color Edition!\n\n");
+    terminal_writestring("Welcome to NOVA v2.0 - Advanced Edition!\n\n");
 
     char command_buffer[128];
     while (1) {
