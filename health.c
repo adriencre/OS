@@ -25,11 +25,8 @@ void terminal_putentryat(char c, uint8_t color, int x, int y);
 #define VGA_COLOR(fg, bg)    (fg | bg << 4)
 
 // --- Fonctions Utilitaires ---
-size_t strlen(const char* str) {
-    size_t len = 0;
-    while (str[len]) len++;
-    return len;
-}
+// strlen est maintenant définie dans kernel.c
+extern size_t strlen(const char* s);
 
 void delay_simple(int milliseconds) {
     for (volatile int i = 0; i < milliseconds * 10000; i++);

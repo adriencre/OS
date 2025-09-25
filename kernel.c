@@ -3,13 +3,37 @@
 #include "idt.h"
 #include "keyboard.h"
 #include "game.h"
+#include "pong.h"
 #include "health.h"
 #include "blackjack.h"
 #include "memory.h"
+#include "editor.h"
+#include "filemanager.h"
+#include "password.h"
 
 // Déclarations de fonctions externes
 void gdt_install();
 extern uint32_t tick;
+
+// --- Système d'historique des commandes simplifié ---
+#define MAX_HISTORY_SIZE 10
+#define MAX_COMMAND_LENGTH 64
+
+static char history_commands[MAX_HISTORY_SIZE][MAX_COMMAND_LENGTH];
+static int history_count = 0;
+static int history_index = 0;
+
+// Déclarations des fonctions de gestion de l'historique
+void add_to_history(const char* command);
+const char* get_history_command(int direction);
+void reset_history_navigation();
+
+// Déclarations des fonctions string
+int strcmp(const char* s1, const char* s2);
+int strncmp(const char* s1, const char* s2, size_t n);
+char* strcpy(char* dest, const char* src);
+size_t strlen(const char* s);
+char* strchr(const char* s, int c);
 
 // --- Variables et fonctions VGA ---
 volatile uint16_t* vga_buffer = (uint16_t*)0xB8000;
@@ -82,8 +106,13 @@ void redraw_line(int start_x, char* buffer, size_t len) {
 void readline(char* buffer, size_t max_len) {
     size_t len = 0, pos = 0;
     int start_x = cursor_x, start_y = cursor_y;
+    
+    // Réinitialiser la navigation dans l'historique
+    reset_history_navigation();
+    
     while (1) {
         int key = getkey();
+        
         if (key == '\n') {
             terminal_putchar('\n');
             break;
@@ -93,13 +122,39 @@ void readline(char* buffer, size_t max_len) {
                 len--; pos--;
                 redraw_line(start_x, buffer, len);
             }
-        }
-        else if (key > 0 && key < 256 && len < max_len - 1) {
+        } else if (key == 257) { // Flèche haut - commande précédente
+            const char* hist_cmd = get_history_command(1);
+            if (hist_cmd != NULL) {
+                // Effacer la ligne actuelle
+                for (size_t i = 0; i < len; i++) {
+                    terminal_putchar_at(' ', start_x + i, start_y);
+                }
+                // Copier la commande de l'historique
+                strcpy(buffer, hist_cmd);
+                len = strlen(buffer);
+                pos = len;
+                redraw_line(start_x, buffer, len);
+            }
+        } else if (key == 258) { // Flèche bas - commande suivante
+            const char* hist_cmd = get_history_command(-1);
+            if (hist_cmd != NULL) {
+                // Effacer la ligne actuelle
+                for (size_t i = 0; i < len; i++) {
+                    terminal_putchar_at(' ', start_x + i, start_y);
+                }
+                // Copier la commande de l'historique (ou chaîne vide)
+                strcpy(buffer, hist_cmd);
+                len = strlen(buffer);
+                pos = len;
+                redraw_line(start_x, buffer, len);
+            }
+        } else if (key > 0 && key < 256 && len < max_len - 1) {
             for (size_t i = len; i > pos; i--) buffer[i] = buffer[i - 1];
             buffer[pos] = (char)key;
             len++; pos++;
             redraw_line(start_x, buffer, len);
         }
+        
         cursor_x = start_x + pos;
         cursor_y = start_y;
         move_cursor(cursor_x, cursor_y);
@@ -114,6 +169,36 @@ int strcmp(const char* s1, const char* s2) {
         s2++;
     }
     return *(const unsigned char*)s1 - *(const unsigned char*)s2;
+}
+
+int strncmp(const char* s1, const char* s2, size_t n) {
+    while (n && *s1 && (*s1 == *s2)) {
+        s1++;
+        s2++;
+        n--;
+    }
+    if (n == 0) return 0;
+    return *(const unsigned char*)s1 - *(const unsigned char*)s2;
+}
+
+char* strchr(const char* s, int c) {
+    while (*s) {
+        if (*s == c) return (char*)s;
+        s++;
+    }
+    return (*s == c) ? (char*)s : NULL;
+}
+
+size_t strlen(const char* s) {
+    size_t len = 0;
+    while (s[len]) len++;
+    return len;
+}
+
+char* strcpy(char* dest, const char* src) {
+    char* ret = dest;
+    while ((*dest++ = *src++));
+    return ret;
 }
 
 void reverse_string(char* str, int length) {
@@ -170,6 +255,44 @@ int simple_atoi(const char* str) {
         }
     }
     return res * sign;
+}
+
+// --- Fonctions de gestion de l'historique simplifiées ---
+void add_to_history(const char* command) {
+    if (strlen(command) == 0) return;
+    
+    // Ajouter simplement à la fin
+    if (history_count < MAX_HISTORY_SIZE) {
+        strcpy(history_commands[history_count], command);
+        history_count++;
+    } else {
+        // Décaler et ajouter
+        for (int i = 0; i < MAX_HISTORY_SIZE - 1; i++) {
+            strcpy(history_commands[i], history_commands[i + 1]);
+        }
+        strcpy(history_commands[MAX_HISTORY_SIZE - 1], command);
+    }
+    history_index = history_count;
+}
+
+const char* get_history_command(int direction) {
+    if (history_count == 0) return NULL;
+    
+    if (direction > 0 && history_index > 0) {
+        history_index--;
+        return history_commands[history_index];
+    } else if (direction < 0 && history_index < history_count) {
+        history_index++;
+        if (history_index >= history_count) {
+            return "";
+        }
+        return history_commands[history_index];
+    }
+    return NULL;
+}
+
+void reset_history_navigation() {
+    history_index = history_count;
 }
 
 // --- Fonctions des commandes ---
@@ -427,7 +550,28 @@ void do_memory() {
     print_memory_stats();
 }
 
+void do_history() {
+    terminal_writestring("=== HISTORIQUE ===\n");
+    
+    if (history_count == 0) {
+        terminal_writestring("Aucune commande.\n");
+        return;
+    }
+    
+    for (int i = 0; i < history_count; i++) {
+        char num_str[5];
+        simple_itoa(i + 1, num_str, 10);
+        terminal_writestring(num_str);
+        terminal_writestring(". ");
+        terminal_writestring(history_commands[i]);
+        terminal_writestring("\n");
+    }
+}
+
 void execute_command(char* line) {
+    // Ajouter la commande à l'historique
+    add_to_history(line);
+    
     char* command = line;
     char* args = NULL;
     int i = 0;
@@ -437,17 +581,21 @@ void execute_command(char* line) {
         args = &line[i + 1];
     }
     if (strcmp(command, "help") == 0) {
-        terminal_writestring("Commands: help, clear, about, calc, chrono, snake, color, blackjack, charset, background, memory\n");
+        terminal_writestring("Commands: help, clear, about, calc, chrono, snake, pong, color, blackjack, charset, background, memory, edit, files, history, password\n");
     } else if (strcmp(command, "clear") == 0) {
         clear_screen();
     } else if (strcmp(command, "about") == 0) {
-        terminal_writestring("MyOS - v1.1 Color Edition\n");
+        terminal_writestring("NOVA - v1.1 Color Edition\n");
     } else if (strcmp(command, "calc") == 0) {
         do_calc(args);
     } else if (strcmp(command, "chrono") == 0) {
         do_chrono();
     } else if (strcmp(command, "snake") == 0) {
         play_snake();
+        clear_screen();
+        terminal_writestring("Welcome back to the shell!\n");
+    } else if (strcmp(command, "pong") == 0) {
+        play_pong();
         clear_screen();
         terminal_writestring("Welcome back to the shell!\n");
     } else if (strcmp(command, "color") == 0) {
@@ -458,6 +606,14 @@ void execute_command(char* line) {
         do_background(args);
     } else if (strcmp(command, "memory") == 0) {
         do_memory();
+    } else if (strcmp(command, "edit") == 0) {
+        run_text_editor(args);
+    } else if (strcmp(command, "files") == 0) {
+        run_file_manager();
+    } else if (strcmp(command, "history") == 0) {
+        do_history();
+    } else if (strcmp(command, "password") == 0) {
+        run_password_generator(args);
     } else if (strcmp(command, "blackjack") == 0) {
         if (play_blackjack()) {
             // Le joueur a gagné au blackjack, accès autorisé à Health
@@ -492,7 +648,7 @@ void kernel_main(void) {
 
     clear_screen();
     display_boot_logo();
-    terminal_writestring("Welcome to MyOS v1.1 - Color Edition!\n\n");
+    terminal_writestring("Welcome to NOVA v1.1 - Color Edition!\n\n");
 
     char command_buffer[128];
     while (1) {
