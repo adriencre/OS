@@ -7,10 +7,12 @@
 #include "blackjack.h"
 #include "memory.h"
 #include "wiki.h"
+#include "messaging.h"
 
 // Déclarations de fonctions externes
 void gdt_install();
 extern uint32_t tick;
+extern void do_messaging(void);
 
 // Déclarations de fonctions utilitaires
 int strcmp(const char* s1, const char* s2);
@@ -579,7 +581,7 @@ void execute_command(char* line) {
         args = &line[i + 1];
     }
     if (strcmp(command, "help") == 0) {
-        terminal_writestring("Commands: help, clear, about, calc, chrono, snake, color, blackjack, charset, background, memory, history, wiki\n");
+        terminal_writestring("Commands: help, clear, about, calc, chrono, snake, color, blackjack, charset, background, memory, history, wiki, chat, messages, sysmsg\n");
     } else if (strcmp(command, "clear") == 0) {
         clear_screen();
     } else if (strcmp(command, "about") == 0) {
@@ -604,6 +606,15 @@ void execute_command(char* line) {
         do_history();
     } else if (strcmp(command, "wiki") == 0) {
         do_wiki(args);
+    } else if (strcmp(command, "chat") == 0) {
+        do_messaging();
+    } else if (strcmp(command, "messages") == 0) {
+        messaging_show_messages(messaging_get_current_user());
+    } else if (strcmp(command, "sysmsg") == 0) {
+        terminal_writestring("Messages systeme automatiques:\n");
+        terminal_writestring("- Intervalle actuel: 10 secondes\n");
+        terminal_writestring("- Prochains messages: Ultron, maintenance, notifications\n");
+        terminal_writestring("- Tapez 'messages' pour voir l'historique complet\n");
     } else if (strcmp(command, "blackjack") == 0) {
         if (play_blackjack()) {
             // Le joueur a gagné au blackjack, accès autorisé à Health
@@ -635,6 +646,7 @@ void kernel_main(void) {
     timer_install();
     memory_init();
     wiki_init();  // Initialiser la mini-Wikipedia
+    messaging_init(); // Initialiser le système de messagerie
     asm volatile("sti");
 
     clear_screen();
@@ -643,7 +655,11 @@ void kernel_main(void) {
 
     char command_buffer[128];
     while (1) {
-        terminal_writestring("> ");
+        // Vérifier les nouveaux messages globaux (affichage différé)
+        messaging_check_new_messages();
+        
+        // Afficher prompt avec notifications
+        messaging_display_prompt_with_notifications();
         readline(command_buffer, 128);
         add_to_history(command_buffer); // Ajouter la commande à l'historique
         execute_command(command_buffer);
