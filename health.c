@@ -10,6 +10,7 @@ extern void readline(char* buffer, size_t max_len);
 char* simple_itoa(int num, char* buffer, int base);
 int simple_atoi(const char* str);
 int strcmp(const char* s1, const char* s2);
+extern size_t strlen(const char* s);
 
 // --- Fonctions graphiques du Kernel ---
 void terminal_putentryat(char c, uint8_t color, int x, int y);
@@ -25,11 +26,7 @@ void terminal_putentryat(char c, uint8_t color, int x, int y);
 #define VGA_COLOR(fg, bg)    (fg | bg << 4)
 
 // --- Fonctions Utilitaires ---
-size_t strlen(const char* str) {
-    size_t len = 0;
-    while (str[len]) len++;
-    return len;
-}
+// strlen maintenant défini dans kernel.c
 
 void delay_simple(int milliseconds) {
     for (volatile int i = 0; i < milliseconds * 10000; i++);

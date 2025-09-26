@@ -10,8 +10,7 @@ void timer_handler(void* regs) {
     (void)regs; // Pour éviter l'avertissement "unused parameter"
     tick++;
     
-    // Vérifier les messages automatiques à chaque tick (affichage en temps réel)
-    messaging_check_auto_messages();
+    // Timer tick - les messages sont vérifiés dans la boucle principale
     
     // Envoyer un signal de fin d'interruption (End of Interrupt) au PIC
     outb(0x20, 0x20);

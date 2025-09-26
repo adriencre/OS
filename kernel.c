@@ -8,14 +8,17 @@
 #include "memory.h"
 #include "wiki.h"
 #include "messaging.h"
+#include "kistory.h"
 
 // Déclarations de fonctions externes
 void gdt_install();
 extern uint32_t tick;
-extern void do_messaging(void);
+// do_messaging remplacé par messaging_system
 
 // Déclarations de fonctions utilitaires
 int strcmp(const char* s1, const char* s2);
+char* strcpy(char* dest, const char* src);
+size_t strlen(const char* s);
 char* simple_itoa(int num, char* buffer, int base);
 
 // --- Variables et fonctions VGA ---
@@ -104,56 +107,11 @@ void terminal_writestring(const char* data) {
 #define MAX_HISTORY 20
 #define MAX_COMMAND_LEN 128
 
-static char command_history[MAX_HISTORY][MAX_COMMAND_LEN];
-static int history_count = 0;
-static int history_index = 0;
+// Variables d'historique maintenant dans kistory.c
 
-void add_to_history(const char* command) {
-    if (command[0] == '\0') return; // Ne pas ajouter les commandes vides
-    
-    // Vérifier si la commande est différente de la dernière
-    if (history_count > 0) {
-        int last_index = (history_count - 1) % MAX_HISTORY;
-        if (strcmp(command_history[last_index], command) == 0) {
-            return; // Ne pas ajouter les doublons consécutifs
-        }
-    }
-    
-    // Ajouter la commande à l'historique
-    int index = history_count % MAX_HISTORY;
-    for (int i = 0; i < MAX_COMMAND_LEN - 1 && command[i] != '\0'; i++) {
-        command_history[index][i] = command[i];
-        command_history[index][i + 1] = '\0';
-    }
-    history_count++;
-    history_index = history_count; // Réinitialiser l'index de navigation
-}
+// Fonction add_to_history maintenant dans kistory.c
 
-void get_history_command(int direction, char* buffer) {
-    if (history_count == 0) return;
-    
-    if (direction == -1) { // Flèche haut (commande précédente)
-        if (history_index > 0) {
-            history_index--;
-        }
-    } else if (direction == 1) { // Flèche bas (commande suivante)
-        if (history_index < history_count) {
-            history_index++;
-        }
-    }
-    
-    if (history_index >= history_count) {
-        buffer[0] = '\0'; // Ligne vide si on dépasse
-    } else {
-        int actual_index = history_index % MAX_HISTORY;
-        if (history_index < history_count) {
-            for (int i = 0; i < MAX_COMMAND_LEN; i++) {
-                buffer[i] = command_history[actual_index][i];
-                if (buffer[i] == '\0') break;
-            }
-        }
-    }
-}
+// Fonction get_history_command maintenant dans kistory.c
 
 // --- Lecture de ligne du Shell ---
 void redraw_line(int start_x, char* buffer, size_t len) {
@@ -183,40 +141,36 @@ void readline(char* buffer, size_t max_len) {
         }
         // Gestion des flèches pour l'historique
         else if (key == 257) { // KEY_UP - Flèche haut
-            char history_buffer[MAX_COMMAND_LEN];
-            get_history_command(-1, history_buffer);
+            const char* hist_cmd = kistory_get_previous();
             
-            // Effacer la ligne actuelle
-            for (size_t i = 0; i < len; i++) {
-                terminal_putchar_at(' ', start_x + i, cursor_y);
+            if (hist_cmd != NULL) {
+                // Effacer la ligne actuelle
+                for (size_t i = 0; i < len; i++) {
+                    terminal_putchar_at(' ', start_x + i, cursor_y);
+                }
+                
+                // Copier la commande de l'historique
+                strcpy(buffer, hist_cmd);
+                len = strlen(buffer);
+                pos = len;
+                redraw_line(start_x, buffer, len);
             }
-            
-            // Copier la commande de l'historique
-            len = 0;
-            for (int i = 0; i < MAX_COMMAND_LEN && history_buffer[i] != '\0'; i++) {
-                buffer[i] = history_buffer[i];
-                len++;
-            }
-            pos = len;
-            redraw_line(start_x, buffer, len);
         }
         else if (key == 258) { // KEY_DOWN - Flèche bas
-            char history_buffer[MAX_COMMAND_LEN];
-            get_history_command(1, history_buffer);
+            const char* hist_cmd = kistory_get_next();
             
-            // Effacer la ligne actuelle
-            for (size_t i = 0; i < len; i++) {
-                terminal_putchar_at(' ', start_x + i, cursor_y);
+            if (hist_cmd != NULL) {
+                // Effacer la ligne actuelle
+                for (size_t i = 0; i < len; i++) {
+                    terminal_putchar_at(' ', start_x + i, cursor_y);
+                }
+                
+                // Copier la commande de l'historique
+                strcpy(buffer, hist_cmd);
+                len = strlen(buffer);
+                pos = len;
+                redraw_line(start_x, buffer, len);
             }
-            
-            // Copier la commande de l'historique
-            len = 0;
-            for (int i = 0; i < MAX_COMMAND_LEN && history_buffer[i] != '\0'; i++) {
-                buffer[i] = history_buffer[i];
-                len++;
-            }
-            pos = len;
-            redraw_line(start_x, buffer, len);
         }
         else if (key > 0 && key < 256 && len < max_len - 1) {
             for (size_t i = len; i > pos; i--) buffer[i] = buffer[i - 1];
@@ -251,6 +205,33 @@ void reverse_string(char* str, int length) {
         start++;
         end--;
     }
+}
+
+char* strcpy(char* dest, const char* src) {
+    char* ret = dest;
+    while ((*dest++ = *src++));
+    return ret;
+}
+
+size_t strlen(const char* s) {
+    size_t len = 0;
+    while (s[len]) len++;
+    return len;
+}
+
+char* strstr(const char* haystack, const char* needle) {
+    if (!*needle) return (char*)haystack;
+    
+    for (; *haystack; haystack++) {
+        const char* h = haystack;
+        const char* n = needle;
+        while (*h && *n && (*h == *n)) {
+            h++;
+            n++;
+        }
+        if (!*n) return (char*)haystack;
+    }
+    return NULL;
 }
 
 char* simple_itoa(int num, char* buffer, int base) {
@@ -553,22 +534,7 @@ void do_memory() {
 }
 
 void do_history() {
-    terminal_writestring("Historique des commandes:\n");
-    if (history_count == 0) {
-        terminal_writestring("Aucune commande dans l'historique.\n");
-        return;
-    }
-    
-    int start = (history_count > MAX_HISTORY) ? history_count - MAX_HISTORY : 0;
-    for (int i = start; i < history_count; i++) {
-        int index = i % MAX_HISTORY;
-        char num_buffer[16];
-        simple_itoa(i + 1, num_buffer, 10);
-        terminal_writestring(num_buffer);
-        terminal_writestring(": ");
-        terminal_writestring(command_history[index]);
-        terminal_writestring("\n");
-    }
+    kistory_display_all();
 }
 
 void execute_command(char* line) {
@@ -581,7 +547,7 @@ void execute_command(char* line) {
         args = &line[i + 1];
     }
     if (strcmp(command, "help") == 0) {
-        terminal_writestring("Commands: help, clear, about, calc, chrono, snake, color, blackjack, charset, background, memory, history, wiki, chat, messages, sysmsg\n");
+        terminal_writestring("Commands: help, clear, about, calc, chrono, snake, color, blackjack, charset, background, memory, history, wiki, messages, sysmsg\n");
     } else if (strcmp(command, "clear") == 0) {
         clear_screen();
     } else if (strcmp(command, "about") == 0) {
@@ -606,15 +572,6 @@ void execute_command(char* line) {
         do_history();
     } else if (strcmp(command, "wiki") == 0) {
         do_wiki(args);
-    } else if (strcmp(command, "chat") == 0) {
-        do_messaging();
-    } else if (strcmp(command, "messages") == 0) {
-        messaging_show_messages(messaging_get_current_user());
-    } else if (strcmp(command, "sysmsg") == 0) {
-        terminal_writestring("Messages systeme automatiques:\n");
-        terminal_writestring("- Intervalle actuel: 10 secondes\n");
-        terminal_writestring("- Prochains messages: Ultron, maintenance, notifications\n");
-        terminal_writestring("- Tapez 'messages' pour voir l'historique complet\n");
     } else if (strcmp(command, "blackjack") == 0) {
         if (play_blackjack()) {
             // Le joueur a gagné au blackjack, accès autorisé à Health
@@ -655,13 +612,11 @@ void kernel_main(void) {
 
     char command_buffer[128];
     while (1) {
-        // Vérifier les nouveaux messages globaux (affichage différé)
-        messaging_check_new_messages();
-        
-        // Afficher prompt avec notifications
-        messaging_display_prompt_with_notifications();
+        // Vérifier les nouveaux messages
+        check_new_messages();
+        terminal_writestring("> ");
         readline(command_buffer, 128);
-        add_to_history(command_buffer); // Ajouter la commande à l'historique
+        kistory_add_command(command_buffer); // Ajouter la commande à l'historique
         execute_command(command_buffer);
     }
 }
