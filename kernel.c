@@ -280,7 +280,7 @@ int simple_atoi(const char* str) {
     }
     return res * sign;
 }
-
+ 
 // --- Fonctions de gestion de l'historique simplifiées ---
 void add_to_history(const char* command) {
     size_t cmd_len = strlen(command);
