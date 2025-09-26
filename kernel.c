@@ -456,16 +456,18 @@ void do_color(char* args) {
 }
 
 void display_boot_logo() {
-    terminal_writestring("      M   M  Y   Y   OOO    SSS\n");
-    terminal_writestring("      MM MM   Y Y   O   O  S   \n");
-    terminal_writestring("      M M M    Y    O   O   SSS\n");
-    terminal_writestring("      M   M    Y    O   O      S\n");
-    terminal_writestring("      M   M    Y     OOO    SSS\n");
+    terminal_writestring("      N   N   OOO   V   V   AAA\n");
+    terminal_writestring("      NN  N  O   O  V   V  A   A\n");
+    terminal_writestring("      N N N  O   O  V   V  AAAAA\n");
+    terminal_writestring("      N  NN  O   O   V V   A   A\n");
+    terminal_writestring("      N   N   OOO     V    A   A\n");
     terminal_writestring("\n");
     terminal_writestring("      ===========================\n");
     terminal_writestring("        Systeme d'Exploitation   \n");
-    terminal_writestring("           Color Edition v1.1    \n");
+    terminal_writestring("           NOVA OS v2.0          \n");
     terminal_writestring("      ===========================\n");
+    terminal_writestring("\n");
+    terminal_writestring("      Tapez 'help' pour obtenir de l'aide\n");
     terminal_writestring("\n");
 }
 

@@ -1,0 +1,224 @@
+===============================================================================
+                            NOVA OS - WORKSHOP B3
+                        Système d'Exploitation Éducatif
+===============================================================================
+
+📋 INFORMATIONS GÉNÉRALES
+===============================================================================
+Nom du projet     : NOVA OS
+Version           : 2.0
+Type              : Système d'exploitation éducatif x86
+Contexte          : WORKSHOP B3
+Langage principal : C + Assembleur
+
+👥 ÉQUIPE DE DÉVELOPPEMENT
+===============================================================================
+- FERLIN Gwendal
+- CREPEL Adrien
+- CARON Timothée
+- BECQUIN Lilian
+
+🎯 DESCRIPTION DU PROJET
+===============================================================================
+NOVA OS est un système d'exploitation minimaliste développé from scratch pour
+l'apprentissage des concepts fondamentaux des OS. Il implémente :
+
+✅ Kernel 32-bit avec bootloader GRUB
+✅ Gestion des interruptions (IDT) et descripteurs (GDT)
+✅ Interface terminal avec shell interactif
+✅ Support clavier AZERTY + navigation flèches
+✅ Système de commandes avec historique
+✅ Applications intégrées (jeux, éditeur, outils)
+✅ Gestion mémoire de base
+✅ Système de fichiers virtuel
+✅ Interface colorée VGA
+
+🚀 FONCTIONNALITÉS PRINCIPALES
+===============================================================================
+
+🖥️  SYSTÈME DE BASE
+    • Boot via GRUB avec logo NOVA ASCII
+    • Shell interactif avec prompt coloré
+    • Historique des commandes (flèches ↑↓)
+    • Défilement automatique de l'écran
+    • Gestion robuste des erreurs
+
+🎮  APPLICATIONS & JEUX
+    • Snake - Jeu classique avec high scores
+    • Pong - Tennis de table rétro
+    • Blackjack - Jeu de cartes contre l'IA
+    • Calculatrice - Opérations mathématiques
+
+🛠️  OUTILS SYSTÈME
+    • Éditeur de texte - Interface complète avec raccourcis
+    • Gestionnaire de fichiers - Navigation et opérations
+    • Moniteur système - CPU, mémoire, santé
+    • Wiki intégré - Documentation interactive
+    • Système de messagerie - Communication utilisateurs
+    • Gestionnaire de mots de passe - Sécurité
+
+📊  STATISTIQUES DU CODE
+===============================================================================
+Lignes de code    : ~7000+ lignes
+Fichiers source   : 23 fichiers (.c + .h)
+Applications      : 6 programmes intégrés
+Modules système   : 8 composants (clavier, timer, mémoire, etc.)
+Assembleur        : 3 fichiers (.s) pour boot et interruptions
+
+⚙️  PRÉREQUIS SYSTÈME
+===============================================================================
+DÉVELOPPEMENT :
+• GCC cross-compiler (x86_64-elf-gcc) OU gcc natif
+• NASM (assembleur)
+• Make
+• GRUB tools (grub-mkrescue, xorriso)
+• Docker (optionnel, pour environnement isolé)
+
+EXÉCUTION :
+• QEMU (émulateur recommandé)
+• Machine physique x86 compatible (optionnel)
+• 512 MB RAM minimum
+• Support VGA
+
+🔧 COMPILATION ET INSTALLATION
+===============================================================================
+
+1. INSTALLATION DES OUTILS (Ubuntu/Debian) :
+   sudo apt update
+   sudo apt install build-essential nasm gcc-multilib grub-pc-bin xorriso qemu-system-x86
+
+2. COMPILATION AUTOMATIQUE :
+   make                    # Compilation complète
+   make info              # Vérifier la toolchain détectée
+   make install-toolchain # Installer les outils manquants
+
+3. ALTERNATIVES DE COMPILATION :
+   make build-native      # Forcer gcc natif
+   make install-grub      # Installer uniquement GRUB
+
+4. NETTOYAGE :
+   make clean             # Supprimer fichiers temporaires
+
+▶️  EXÉCUTION
+===============================================================================
+
+🖥️  DANS QEMU (RECOMMANDÉ) :
+   make run               # Lancement standard
+   make run-power         # Plus de ressources
+   make run-windows       # Optimisé Windows (WHPX)
+   make run-mac           # Optimisé macOS (HVF)
+
+🐛  DÉBOGAGE :
+   make debug             # Mode débogage GDB
+
+💿  SUR MACHINE PHYSIQUE :
+   1. Graver myos.iso sur USB/CD
+   2. Booter depuis le support
+   3. Sélectionner "NOVA" dans GRUB
+
+🎮 GUIDE D'UTILISATION
+===============================================================================
+
+COMMANDES PRINCIPALES :
+  help          - Afficher l'aide complète
+  apps          - Liste des applications
+  snake         - Lancer Snake
+  pong          - Lancer Pong
+  blackjack     - Lancer Blackjack
+  calc          - Calculatrice
+  edit          - Éditeur de texte
+  files         - Gestionnaire de fichiers
+  health        - Moniteur système
+  wiki          - Documentation
+  messaging     - Système de messages
+  passwd        - Gestion des mots de passe
+  charset       - Caractères disponibles
+  colors        - Test des couleurs
+  clear         - Effacer l'écran
+  reboot        - Redémarrer le système
+
+NAVIGATION :
+• ↑↓ : Historique des commandes
+• ←→ : Navigation dans la ligne
+• Tab : Auto-complétion (si implémentée)
+• ESC : Quitter les applications
+
+🏗️  ARCHITECTURE TECHNIQUE
+===============================================================================
+
+STRUCTURE DES MODULES :
+├── kernel.c          - Cœur système + shell
+├── boot.s           - Bootloader assembleur
+├── gdt.c/idt.c      - Tables de descripteurs
+├── keyboard.c       - Driver clavier AZERTY
+├── timer.c          - Gestion du temps
+├── memory.c         - Allocateur mémoire
+├── io.c             - Entrées/sorties bas niveau
+├── game.c           - Moteur de jeux
+├── editor.c         - Éditeur de texte
+├── filemanager.c    - Système de fichiers
+├── messaging.c      - Communication
+└── wiki.c           - Base de connaissances
+
+COMPILATION CROSS-PLATFORM :
+• Détection automatique OS (Windows/Linux/macOS)
+• Support Docker pour isolation
+• Fallback gcc natif si cross-compiler absent
+• Scripts de build intelligents
+
+🔬 CONCEPTS TECHNIQUES IMPLÉMENTÉS
+===============================================================================
+• Global Descriptor Table (GDT)
+• Interrupt Descriptor Table (IDT)
+• Gestion des exceptions CPU
+• Timer programmable (PIT)
+• Contrôleur d'interruptions (PIC)
+• Mode texte VGA coloré
+• Allocation mémoire statique
+• État de processus basique
+• Interface utilisateur en mode texte
+
+🐛 DÉBOGAGE ET TESTS
+===============================================================================
+• Mode débogage GDB intégré
+• Protection contre buffer overflow
+• Gestion d'erreurs robuste
+• Tests de stress mémoire
+• Validation des entrées utilisateur
+• Logs système intégrés
+
+📚 RESSOURCES ET RÉFÉRENCES
+===============================================================================
+• OSDev Wiki : https://wiki.osdev.org
+• Intel Software Developer Manual
+• Documentation GRUB
+• Spécifications VGA
+• Standards x86 Assembly
+
+🚨 PROBLÈMES CONNUS
+===============================================================================
+• Système de fichiers en lecture seule
+• Pas de multitâche préemptif
+• Gestion mémoire limitée
+• Support réseau non implémenté
+• Audio non supporté
+
+🔮 AMÉLIORATIONS FUTURES
+===============================================================================
+• Multitâche coopératif
+• Système de fichiers complet
+• Support USB
+• Interface graphique basique
+• Réseau TCP/IP simple
+• Son PC Speaker
+
+📄 LICENCE ET CRÉDITS
+===============================================================================
+Projet éducatif développé dans le cadre du WORKSHOP B3.
+Code source libre pour usage académique.
+
+© 2025 - Équipe NOVA OS - WORKSHOP B3
+
+Pour plus d'informations ou support, consultez le wiki intégré
+ou contactez l'équipe de développement.
+
