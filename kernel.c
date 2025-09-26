@@ -10,14 +10,16 @@
 #include "editor.h"
 #include "filemanager.h"
 #include "password.h"
+#include "messaging.h"
+#include "wiki.h"
 
 // Déclarations de fonctions externes
 void gdt_install();
 extern uint32_t tick;
 
-// --- Système d'historique des commandes simplifié ---
-#define MAX_HISTORY_SIZE 10
-#define MAX_COMMAND_LENGTH 64
+// --- Système d'historique des commandes amélioré ---
+#define MAX_HISTORY_SIZE 20
+#define MAX_COMMAND_LENGTH 256
 
 static char history_commands[MAX_HISTORY_SIZE][MAX_COMMAND_LENGTH];
 static int history_count = 0;
@@ -59,7 +61,10 @@ void terminal_putentryat(char c, uint8_t color, int x, int y) {
 }
 
 void terminal_putchar_at(char c, int x, int y) {
-    vga_buffer[y * VGA_WIDTH + x] = ((uint16_t)terminal_color << 8) | c;
+    // Protection contre les accès hors limites
+    if (x >= 0 && x < VGA_WIDTH && y >= 0 && y < VGA_HEIGHT) {
+        vga_buffer[y * VGA_WIDTH + x] = ((uint16_t)terminal_color << 8) | c;
+    }
 }
 
 void clear_screen() {
@@ -71,6 +76,19 @@ void clear_screen() {
     cursor_x = 0;
     cursor_y = 0;
     move_cursor(cursor_x, cursor_y);
+}
+
+void scroll_screen() {
+    // Faire défiler toutes les lignes vers le haut
+    for (int y = 0; y < VGA_HEIGHT - 1; y++) {
+        for (int x = 0; x < VGA_WIDTH; x++) {
+            vga_buffer[y * VGA_WIDTH + x] = vga_buffer[(y + 1) * VGA_WIDTH + x];
+        }
+    }
+    // Vider la dernière ligne
+    for (int x = 0; x < VGA_WIDTH; x++) {
+        vga_buffer[(VGA_HEIGHT - 1) * VGA_WIDTH + x] = ((uint16_t)terminal_color << 8) | ' ';
+    }
 }
 
 void terminal_putchar(char c) {
@@ -85,7 +103,11 @@ void terminal_putchar(char c) {
         cursor_x = 0;
         cursor_y++;
     }
-    // Note: un scroll complet n'est pas implémenté ici
+    // Gérer le défilement si on dépasse l'écran
+    if (cursor_y >= VGA_HEIGHT) {
+        scroll_screen();
+        cursor_y = VGA_HEIGHT - 1;
+    }
     move_cursor(cursor_x, cursor_y);
 }
 
@@ -97,10 +119,12 @@ void terminal_writestring(const char* data) {
 
 // --- Lecture de ligne du Shell ---
 void redraw_line(int start_x, char* buffer, size_t len) {
-    for(size_t i = 0; i < len; i++) {
+    for(size_t i = 0; i < len && (start_x + i) < VGA_WIDTH; i++) {
         terminal_putchar_at(buffer[i], start_x + i, cursor_y);
     }
-    terminal_putchar_at(' ', start_x + len, cursor_y);
+    if ((start_x + len) < VGA_WIDTH) {
+        terminal_putchar_at(' ', start_x + len, cursor_y);
+    }
 }
 
 void readline(char* buffer, size_t max_len) {
@@ -122,8 +146,8 @@ void readline(char* buffer, size_t max_len) {
                 len--; pos--;
                 redraw_line(start_x, buffer, len);
             }
-        } else if (key == 257) { // Flèche haut - commande précédente
-            const char* hist_cmd = get_history_command(1);
+        } else if (key == 257) { // KEY_UP - commande précédente
+            const char* hist_cmd = get_history_command(-1);
             if (hist_cmd != NULL) {
                 // Effacer la ligne actuelle
                 for (size_t i = 0; i < len; i++) {
@@ -135,8 +159,8 @@ void readline(char* buffer, size_t max_len) {
                 pos = len;
                 redraw_line(start_x, buffer, len);
             }
-        } else if (key == 258) { // Flèche bas - commande suivante
-            const char* hist_cmd = get_history_command(-1);
+        } else if (key == 258) { // KEY_DOWN - commande suivante
+            const char* hist_cmd = get_history_command(1);
             if (hist_cmd != NULL) {
                 // Effacer la ligne actuelle
                 for (size_t i = 0; i < len; i++) {
@@ -259,36 +283,55 @@ int simple_atoi(const char* str) {
 
 // --- Fonctions de gestion de l'historique simplifiées ---
 void add_to_history(const char* command) {
-    if (strlen(command) == 0) return;
+    size_t cmd_len = strlen(command);
+    if (cmd_len == 0 || cmd_len >= MAX_COMMAND_LENGTH) return;
     
-    // Ajouter simplement à la fin
-    if (history_count < MAX_HISTORY_SIZE) {
-        strcpy(history_commands[history_count], command);
-        history_count++;
-    } else {
-        // Décaler et ajouter
-        for (int i = 0; i < MAX_HISTORY_SIZE - 1; i++) {
-            strcpy(history_commands[i], history_commands[i + 1]);
+    // Éviter les doublons consécutifs
+    if (history_count > 0) {
+        int last_index = (history_count - 1) % MAX_HISTORY_SIZE;
+        if (strcmp(history_commands[last_index], command) == 0) {
+            return; // Ne pas ajouter un doublon
         }
-        strcpy(history_commands[MAX_HISTORY_SIZE - 1], command);
     }
-    history_index = history_count;
+    
+    // Ajouter la commande à l'historique avec protection
+    int index = history_count % MAX_HISTORY_SIZE;
+    
+    // Copie sécurisée pour éviter le débordement
+    size_t copy_len = cmd_len < MAX_COMMAND_LENGTH - 1 ? cmd_len : MAX_COMMAND_LENGTH - 1;
+    for (size_t i = 0; i < copy_len; i++) {
+        history_commands[index][i] = command[i];
+    }
+    history_commands[index][copy_len] = '\0';
+    
+    history_count++;
+    history_index = history_count; // Réinitialiser l'index de navigation
 }
 
 const char* get_history_command(int direction) {
     if (history_count == 0) return NULL;
     
-    if (direction > 0 && history_index > 0) {
-        history_index--;
-        return history_commands[history_index];
-    } else if (direction < 0 && history_index < history_count) {
-        history_index++;
-        if (history_index >= history_count) {
-            return "";
+    // Direction -1 = flèche haut (remonter), +1 = flèche bas (descendre)
+    if (direction == -1) {
+        if (history_index > 0) {
+            history_index--;
         }
-        return history_commands[history_index];
+    } else if (direction == 1) {
+        if (history_index < history_count) {
+            history_index++;
+        }
     }
-    return NULL;
+    
+    if (history_index >= history_count) {
+        return ""; // Ligne vide si on dépasse
+    } else {
+        int actual_index = history_index % MAX_HISTORY_SIZE;
+        // Protection supplémentaire contre les accès hors limites
+        if (actual_index >= 0 && actual_index < MAX_HISTORY_SIZE && history_index < history_count) {
+            return history_commands[actual_index];
+        }
+    }
+    return "";
 }
 
 void reset_history_navigation() {
@@ -581,7 +624,7 @@ void execute_command(char* line) {
         args = &line[i + 1];
     }
     if (strcmp(command, "help") == 0) {
-        terminal_writestring("Commands: help, clear, about, calc, chrono, snake, pong, color, blackjack, charset, background, memory, edit, files, history, password\n");
+        terminal_writestring("Commands: help, clear, about, calc, chrono, snake, pong, color, blackjack, charset, background, memory, edit, files, history, password, wiki, chat, messages\n");
     } else if (strcmp(command, "clear") == 0) {
         clear_screen();
     } else if (strcmp(command, "about") == 0) {
@@ -614,6 +657,10 @@ void execute_command(char* line) {
         do_history();
     } else if (strcmp(command, "password") == 0) {
         run_password_generator(args);
+    } else if (strcmp(command, "wiki") == 0) {
+        do_wiki(args);
+    } else if (strcmp(command, "chat") == 0 || strcmp(command, "messages") == 0) {
+        do_messaging();
     } else if (strcmp(command, "blackjack") == 0) {
         if (play_blackjack()) {
             // Le joueur a gagné au blackjack, accès autorisé à Health
@@ -644,15 +691,25 @@ void kernel_main(void) {
     idt_install();
     timer_install();
     memory_init();
+    
+    // Initialiser les nouveaux systèmes
+    messaging_init();
+    wiki_init();
+    
     asm volatile("sti");
 
     clear_screen();
     display_boot_logo();
-    terminal_writestring("Welcome to NOVA v1.1 - Color Edition!\n\n");
+    terminal_writestring("Welcome to NOVA v1.1 - Color Edition with Messaging & Wiki!\n\n");
 
     char command_buffer[128];
     while (1) {
-        terminal_writestring("> ");
+        // Vérifier les messages automatiques
+        messaging_check_auto_messages();
+        
+        // Afficher le prompt avec notifications
+        messaging_display_prompt_with_notifications();
+        
         readline(command_buffer, 128);
         execute_command(command_buffer);
     }
